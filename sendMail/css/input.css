@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+.mao {
+  display: flex;
+  flex-direction: column;
+  align-content: center;
+  align: center;
+}
