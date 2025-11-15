@@ -59,6 +59,7 @@ router.get("/home-data", verifyOrigin, async (req, res, next) => {
     const reviews = await find({
       data: {},
       collectionName: "reviews",
+      options: { limit: 6 },
     });
 
     for (let review of reviews) {
@@ -121,8 +122,9 @@ router.post(
       });
 
       if (checkedUser) {
-        return res.status(300).json({
+        return res.status(200).json({
           success: false,
+          _id: String(checkedUser._id),
           message: "user Already exist",
         });
       }
@@ -137,10 +139,11 @@ router.post(
         collectionName: "users",
       });
 
-      console.log("createdUser ===> ", createdUser);
+      // console.log("createdUser ===> ", createdUser);
 
       return res.status(201).json({
         success: true,
+        _id: String(createdUser.insertedId),
         message: "user created successfully",
       });
     } catch (error) {
@@ -148,6 +151,53 @@ router.post(
     }
   }
 );
+
+router.post("/login/user", verifyOrigin, async (req, res, next) => {
+  try {
+    // const {displayName, email, photoURL} = req.body;
+    const { name, email, image } = req.body;
+
+    console.log("res ==> ==> ", req.body);
+
+    const checkedUser = await findOne({
+      data: {
+        name,
+        email,
+      },
+      collectionName: "users",
+    });
+
+    let user = null;
+
+    if (!checkedUser) {
+      // create user
+
+      const schema = {
+        name,
+        email,
+        image,
+      };
+      user = await createOne({
+        data: new User(schema),
+        collectionName: "users",
+      });
+      user._id = user.insertedId;
+    } else {
+      user = await findOne({
+        data: { name, email },
+        collectionName: "users",
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      _id: String(user._id),
+      message: "Login successful",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.post(
   "/create/review",
@@ -201,10 +251,58 @@ router.post(
         message: "Review created!",
       });
     } catch (error) {
+      console.log("Error /create/review => ", error.message);
       next(error);
     }
   }
 );
+
+router.get("/search/review", async (req, res, next) => {
+  const { searchValue } = req.query;
+
+  try {
+    if (!searchValue) return res.json([]);
+
+    // escape special regex chars for safety
+    const escapeRegex = (str) =>
+      str.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+
+    const regex = new RegExp(escapeRegex(searchValue), "i");
+
+    const query = {
+      $or: [
+        { category: { $regex: regex } },
+        { foodName: { $regex: regex } },
+        { restaurantName: { $regex: regex } },
+        { location: { $regex: regex } },
+        { reviewText: { $regex: regex } },
+      ],
+    };
+
+    const reviews = await find({
+      collectionName: "reviews",
+      data: query,
+    });
+
+    for (let review of reviews) {
+      let user = await findOne({
+        data: {
+          _id: new ObjectId(review.user),
+        },
+        collectionName: "users",
+      });
+
+      review.user = user;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: reviews,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.post("/create/comment", async (req, res, next) => {
   try {
@@ -442,17 +540,17 @@ router.get("/shows/loved-reviews", async (req, res, next) => {
 
 router.post("/add/loved-reviews", async (req, res, next) => {
   try {
-    let { name, email, reviewId } = req.body;
+    let { _id, reviewId } = req.body;
 
-    name: name.trim();
-    email: email.trim();
+    // console.log("/add/loved-reviews ==> ", req.body);
 
     const user = await findOne({
-      data: { name, email },
+      data: { _id: new ObjectId(_id) },
       collectionName: "users",
     });
 
     if (!user) {
+      console.log("not found user!");
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
@@ -463,11 +561,12 @@ router.post("/add/loved-reviews", async (req, res, next) => {
     const updateResult = await db
       .collection("reviews")
       .updateOne(
-        { _id: new ObjectId(reviewId), user: new ObjectId(user._id) },
+        { _id: new ObjectId(reviewId) },
         { $addToSet: { loved: new ObjectId(user._id) } }
       );
 
     if (updateResult.modifiedCount === 0) {
+      console.log("fail");
       return res.status(400).json({
         success: false,
         message: "No review updated (maybe already loved or invalid reviewId)",

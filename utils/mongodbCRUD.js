@@ -6,9 +6,9 @@ export async function createOne({ data, collectionName }) {
   return db.collection(collectionName).insertOne(data);
 }
 
-export async function find({ data = {}, collectionName }) {
+export async function find({ data = {}, collectionName, options = {} }) {
   const db = await connectDB();
-  return db.collection(collectionName).find(data).toArray();
+  return db.collection(collectionName).find(data, options).toArray();
 }
 
 export async function findOne({ data, collectionName }) {
